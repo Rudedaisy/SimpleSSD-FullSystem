@@ -45,6 +45,11 @@ import m5
 from m5.defines import buildEnv
 from m5.objects import *
 
+#import sys
+#sys.path.append('/root/hostCurUser/SimpleSSD-FullSystem/configs/common/')
+#from Benchmarks import *
+#import ObjectList
+
 from .Benchmarks import *
 from . import ObjectList
 

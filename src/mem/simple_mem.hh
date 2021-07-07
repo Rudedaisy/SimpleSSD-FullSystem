@@ -146,6 +146,13 @@ class SimpleMemory : public AbstractMemory
     bool retryResp;
 
     /**
+     * Return latencies reported by SimpleSSD
+     */
+    FILE *ssdptr;
+    bool ssdeof;
+    char** str_split(char* a_str, const char a_delim);
+
+    /**
      * Release the memory after being busy and send a retry if a
      * request was rejected in the meanwhile.
      */
@@ -166,7 +173,7 @@ class SimpleMemory : public AbstractMemory
      *
      * @return the latency seen by the current packet
      */
-    Tick getLatency() const;
+    Tick getLatency();
 
     /**
      * Upstream caches need this packet until true is returned, so

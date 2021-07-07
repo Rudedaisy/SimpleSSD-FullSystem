@@ -47,6 +47,7 @@
 #include "base/random.hh"
 #include "base/trace.hh"
 #include "debug/Drain.hh"
+#include "debug/SimpleSSD.hh"
 
 SimpleMemory::SimpleMemory(const SimpleMemoryParams* p) :
     AbstractMemory(p),
@@ -56,6 +57,15 @@ SimpleMemory::SimpleMemory(const SimpleMemoryParams* p) :
     releaseEvent([this]{ release(); }, name()),
     dequeueEvent([this]{ dequeue(); }, name())
 {
+    ssdptr = \
+      fopen("/root/hostCurUser/SimpleSSD-Standalone/out/latency.csv", "r");
+    if (ssdptr == NULL) {
+        printf("warn: SimpleSSD feedback trace not found\n");
+        ssdeof = true;
+    } else {
+        ssdeof = false;
+    }
+
 }
 
 void
@@ -111,6 +121,7 @@ SimpleMemory::recvFunctional(PacketPtr pkt)
 bool
 SimpleMemory::recvTimingReq(PacketPtr pkt)
 {
+
     panic_if(pkt->cacheResponding(), "Should not see packets where cache "
              "is responding");
 
@@ -130,6 +141,17 @@ SimpleMemory::recvTimingReq(PacketPtr pkt)
         retryReq = true;
         return false;
     }
+
+    // --- Grab data for SimpleSSD here --- //
+    // Addr pkt->getAddr() OR Addr pkt->getBlockAddr()
+    // Bool pkt->isRead()
+    // Bool pkt->isWrite()
+    // unsigned pkt->getSize()
+    if (pkt->isRead())
+      DPRINTF(SimpleSSD, "Read: %llu: %u\n", pkt->getAddr(), pkt->getSize());
+    if (pkt->isWrite())
+      DPRINTF(SimpleSSD, "Write: %#llu: %u\n", pkt->getAddr(), pkt->getSize());
+    // ------------------------------------ //
 
     // technically the packet only reaches us after the header delay,
     // and since this is a memory controller we also need to
@@ -226,9 +248,73 @@ SimpleMemory::dequeue()
     }
 }
 
-Tick
-SimpleMemory::getLatency() const
+char**
+SimpleMemory::str_split(char* a_str, const char a_delim)
 {
+    char** result    = 0;
+    size_t count     = 0;
+    char* tmp        = a_str;
+    char* last_comma = 0;
+    char delim[2];
+    delim[0] = a_delim;
+    delim[1] = 0;
+
+    /* Count how many elements will be extracted. */
+    while (*tmp)
+    {
+        if (a_delim == *tmp)
+        {
+            count++;
+            last_comma = tmp;
+        }
+        tmp++;
+    }
+
+    /* Add space for trailing token. */
+    count += last_comma < (a_str + strlen(a_str) - 1);
+
+    /* Add space for terminating null string so caller
+       knows where the list of returned strings ends. */
+    count++;
+
+    result = (char**)malloc(sizeof(char*) * count);
+
+    if (result)
+    {
+        size_t idx  = 0;
+        char* token = strtok(a_str, delim);
+
+        while (token)
+        {
+            assert(idx < count);
+            *(result + idx++) = strdup(token);
+            token = strtok(0, delim);
+        }
+        assert(idx == count - 1);
+        *(result + idx) = 0;
+    }
+
+    return result;
+}
+
+Tick
+SimpleMemory::getLatency()
+{
+    if (!ssdeof) {
+        char * line = NULL;
+        size_t len = 0;
+        ssize_t read;
+        read = getline(&line, &len, ssdptr);
+        if (read != -1) {
+            char** parsedLine = str_split(line, ',');
+            unsigned psLatency = strtoul(parsedLine[3], 0L, 10);
+            Tick ssdLatency = (Tick)(psLatency / 1000); // Ticks are in ns
+            free(parsedLine);
+            return ssdLatency;
+        } else {
+            ssdeof = true;
+        }
+    }
     return latency +
         (latency_var ? random_mt.random<Tick>(0, latency_var) : 0);
 }
